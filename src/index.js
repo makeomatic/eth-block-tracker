@@ -1,31 +1,35 @@
 'use strict';
 
 const EthQuery = require('eth-query')
-const AsyncEventEmitter = require('async-eventemitter')
+const EventEmitter = require('events')
 const pify = require('pify')
 const hexUtils = require('./hexUtils')
 const incrementHexNumber = hexUtils.incrementHexNumber
+const sec = 1000
+const min = 60 * sec
 
-class RpcBlockTracker extends AsyncEventEmitter {
+class RpcBlockTracker extends EventEmitter {
 
   constructor(opts = {}) {
     super()
     if (!opts.provider) throw new Error('RpcBlockTracker - no provider specified.')
+    this._provider = opts.provider
     this._query = new EthQuery(opts.provider)
     // config
-    this._pollingInterval = opts.pollingInterval || 4e3 // 4 sec
-    this._syncingTimeout = opts.syncingTimeout || 60 * 1e3 // 1 min
+    this._pollingInterval = opts.pollingInterval || 4 * sec
+    this._syncingTimeout = opts.syncingTimeout || 1 * min
     // state
     this._trackingBlock = null
     this._trackingBlockTimestamp = null
     this._currentBlock = null
     this._isRunning = false
+    this._subscriptionId = null
+
     // bind methods for cleaner syntax later
-    this.emit = this.emit.bind(this)
-    this.pEmit = pify(this.emit);
+    this._polling = null
     this._query.getBlockByNumberAsync = pify(this._query.getBlockByNumber).bind(this._query);
     this._performSync = this._performSync.bind(this)
-    this._polling = null;
+    this._handleNewBlockNotification = this._handleNewBlockNotification.bind(this)
   }
 
   getTrackingBlock () {
@@ -40,7 +44,7 @@ class RpcBlockTracker extends AsyncEventEmitter {
     // return if available
     if (this._currentBlock) return this._currentBlock
     // wait for "sync" event
-    await new Promise(resolve => this.once('sync', resolve))
+    await new Promise(resolve => this.once('latest', resolve))
     // return newly set current block
     return this._currentBlock
   }
@@ -49,6 +53,7 @@ class RpcBlockTracker extends AsyncEventEmitter {
     // abort if already started
     if (this._isRunning) return
     this._isRunning = true
+
     // if this._currentBlock
     if (opts.fromBlock) {
       // use specified start point
@@ -57,15 +62,28 @@ class RpcBlockTracker extends AsyncEventEmitter {
       // or query for latest
       await this._setTrackingBlock(await this._fetchLatestBlock())
     }
-    this._performSync()
-    .catch((err) => {
-      if (err) console.error(err)
-    })
+
+    if (this._provider.on) {
+      await this._initSubscription()
+      return
+    }
+
+    try {
+      await this._performSync();
+    } catch (e) {
+      this.emit('error', e);
+    }
   }
 
-  stop () {
+  async stop () {
     this._isRunning = false
+
     clearTimeout(this._polling)
+    this._polling = null
+
+    if (this._provider.on) {
+      await this._removeSubscription()
+    }
   }
 
   //
@@ -84,7 +102,7 @@ class RpcBlockTracker extends AsyncEventEmitter {
     } else {
       this._trackingBlock = newBlock
       this._trackingBlockTimestamp = now
-      await this.pEmit('block', newBlock)
+      this.emit('block', newBlock)
     }
   }
 
@@ -92,8 +110,8 @@ class RpcBlockTracker extends AsyncEventEmitter {
     if (this._currentBlock && (this._currentBlock.hash === newBlock.hash)) return
     const oldBlock = this._currentBlock
     this._currentBlock = newBlock
-    await this.pEmit('latest', newBlock)
-    await this.pEmit('sync', { newBlock, oldBlock })
+    this.emit('latest', newBlock)
+    this.emit('sync', { newBlock, oldBlock })
   }
 
   async _warpToLatest() {
@@ -141,6 +159,50 @@ class RpcBlockTracker extends AsyncEventEmitter {
       }
 
     }
+  }
+
+  async _handleNewBlockNotification(err, notification) {
+    if (notification.id != this._subscriptionId)
+      return // this notification isn't for us
+
+    if (err) {
+      this.emit('error', err)
+      await this._removeSubscription()
+    }
+
+    await this._setTrackingBlock(await this._fetchBlockByNumber(notification.result.number))
+  }
+
+  async _initSubscription() {
+    this._provider.on('data', this._handleNewBlockNotification)
+
+    let result = await pify(this._provider.sendAsync || this._provider.send)({
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'eth_subscribe',
+      params: [
+        'newHeads'
+      ],
+    })
+
+    this._subscriptionId = result.result
+  }
+
+  async _removeSubscription() {
+    if (!this._subscriptionId) throw new Error('Not subscribed.')
+
+    this._provider.removeListener('data', this._handleNewBlockNotification)
+
+    await pify(this._provider.sendAsync || this._provider.send)({
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'eth_unsubscribe',
+      params: [
+        this._subscriptionId
+      ],
+    })
+
+    this._subscriptionId = null
   }
 
   _fetchLatestBlock () {

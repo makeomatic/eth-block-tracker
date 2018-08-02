@@ -1,6 +1,6 @@
 const test = require('tape')
 const RpcBlockTracker = require('..')
-const JsonRpcEngine = require('json-rpc-engine')
+const JsonRpcEngine = require('@makeomatic/json-rpc-engine')
 const TestBlockMiddleware = require('./util/testBlockMiddleware')
 
 test('basic tests - constructor', (t) => {
