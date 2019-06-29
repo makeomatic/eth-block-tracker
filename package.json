@@ -1,34 +1,43 @@
 {
-  "name": "eth-block-tracker",
-  "version": "3.0.0",
-  "description": "This module walks the Ethereum blockchain, keeping track of the latest block. It uses a web3 provider as a data source and will continuously poll for the next block.",
-  "main": "src/index.js",
+  "name": "@makeomatic/eth-block-tracker",
+  "version": "4.4.1",
+  "description": "A block tracker for the Ethereum blockchain. Keeps track of the latest block.",
+  "main": "src/polling.js",
   "scripts": {
-    "test": "npm run build && node test/index.js",
-    "prepare": "npm run build",
-    "build": "mkdir -p ./dist && npm run bundle",
-    "bundle": "babel src -d dist/es5/ && npm run bundle-main",
-    "bundle-main": "browserify -s EthBlockTracker -e src/index.js -t [ babelify --presets [ es2015 ] ] > dist/EthBlockTracker.js"
+    "test": "yarn build && yarn test:unit && yarn test:lint:deps",
+    "test:unit": "node test/index.js",
+    "test:lint:deps": "npx depcheck --ignore-dirs dist --ignores babelify,@babel/preset-env,core-js",
+    "prepublishOnly": "yarn build",
+    "build": "yarn build:clean && yarn build:es5 && yarn build:bundle && yarn build:validate",
+    "build:clean": "rm -rf ./dist && mkdir -p ./dist",
+    "build:es5": "babel ./src -d dist/es5/",
+    "build:bundle": "yarn build:bundle:polling && yarn build:bundle:base && yarn build:bundle:subscribe",
+    "build:bundle:polling": "browserify -s PollingBlockTracker -e src/polling.js -g babelify > dist/PollingBlockTracker.js",
+    "build:bundle:subscribe": "browserify -s SubscribeBlockTracker -e src/subscribe.js -g babelify > dist/SubscribeBlockTracker.js",
+    "build:bundle:base": "browserify -s BaseBlockTracker -e src/base.js -g babelify > dist/BaseBlockTracker.js",
+    "build:validate": "terser dist/es5/**.js > /dev/null"
   },
   "author": "kumavis",
   "license": "MIT",
   "dependencies": {
+    "@babel/core": "^7.0.0",
     "eth-query": "^2.1.0",
-    "ethereumjs-tx": "^1.3.3",
-    "ethereumjs-util": "^5.1.3",
-    "ethjs-util": "^0.1.6",
-    "pify": "^3.0.0"
+    "json-rpc-random-id": "^1.0.1",
+    "pify": "^4.0.1",
+    "safe-event-emitter": "^1.0.1"
   },
   "devDependencies": {
-    "@makeomatic/json-rpc-engine": "^3.7.4",
-    "babel-cli": "^6.24.1",
-    "babel-plugin-transform-runtime": "^6.23.0",
-    "babel-preset-es2015": "^6.24.1",
-    "babel-preset-stage-3": "^6.24.1",
-    "babelify": "^8.0.0",
-    "browserify": "^16.2.2",
-    "mississippi": "^3.0.0",
-    "tape": "^4.9.1"
+    "@babel/cli": "^7.0.0",
+    "@babel/core": "^7.0.0",
+    "@babel/preset-env": "^7.0.0",
+    "@makeomatic/json-rpc-engine": "^5.1.2",
+    "babelify": "^10.0.0",
+    "browserify": "^16.2.3",
+    "core-js": "3",
+    "eth-json-rpc-infura": "^4.0.0",
+    "ganache-core": "^2.5.5",
+    "tape": "^4.9.0",
+    "terser": "^4.0.0"
   },
   "directories": {
     "test": "test"
@@ -42,7 +51,8 @@
   },
   "homepage": "https://github.com/kumavis/eth-block-tracker#readme",
   "files": [
-    "lib/"
+    "lib/",
+    "src/"
   ],
   "engine": {
     "node": ">= 8.9.0"
