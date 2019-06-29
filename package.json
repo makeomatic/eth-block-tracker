@@ -3,6 +3,9 @@
   "version": "4.4.1",
   "description": "A block tracker for the Ethereum blockchain. Keeps track of the latest block.",
   "main": "src/polling.js",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "test": "yarn build && yarn test:unit && yarn test:lint:deps",
     "test:unit": "node test/index.js",
@@ -51,7 +54,7 @@
   },
   "homepage": "https://github.com/kumavis/eth-block-tracker#readme",
   "files": [
-    "lib/",
+    "dist/",
     "src/"
   ],
   "engine": {
